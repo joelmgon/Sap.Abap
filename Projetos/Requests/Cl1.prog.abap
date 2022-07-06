@@ -1,0 +1,299 @@
+*&---------------------------------------------------------------------*
+*&  Include           ZJG_PRO_REQUESTS_VIS04_CL1
+*&---------------------------------------------------------------------*
+
+CLASS LCL_APP DEFINITION FINAL.     "lcl_app DEFINITION
+  PUBLIC SECTION.
+    METHODS: GET_DATA.
+    METHODS: DISPLAY_ALV.
+
+*" Event Handler
+    METHODS:
+      ON_USER_COMMAND FOR EVENT ADDED_FUNCTION OF CL_SALV_EVENTS
+        IMPORTING E_SALV_FUNCTION.
+
+
+    METHODS DO_PAI_SCREEN_900.
+
+  PROTECTED SECTION.
+
+  PRIVATE SECTION.
+
+*" CRUD
+    METHODS DO_CRIAR .
+    METHODS DO_MODIFICAR .
+    METHODS DO_ELIMINAR .
+    METHODS DO_PRINT .
+
+*" SALV
+    METHODS FCAT.
+    METHODS DO_CALL_SCREEN_900.
+    METHODS GRID_INSTANCE.
+
+ENDCLASS.
+
+
+CLASS LCL_APP IMPLEMENTATION.   "lcl_app IMPLEMENTATION
+
+  METHOD GRID_INSTANCE.
+  ENDMETHOD.
+
+  METHOD FCAT.
+
+    DATA(LO_COLS) = GO_LISTA->GET_COLUMNS( ).
+*
+*   set the Column optimization
+    LO_COLS->SET_OPTIMIZE( 'X' ).
+*
+*...Process individual columns
+    DATA: LO_COLUMN TYPE REF TO CL_SALV_COLUMN.
+*
+*   Change the properties of the Columns KUNNR
+    TRY.
+        LO_COLUMN = LO_COLS->GET_COLUMN( 'MANDT' ).
+        LO_COLUMN->SET_TECHNICAL( 'X' ).
+      CATCH CX_SALV_NOT_FOUND.                          "#EC NO_HANDLER
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD DO_CALL_SCREEN_900.
+    CALL SCREEN 0900.
+  ENDMETHOD.
+
+  METHOD DO_PAI_SCREEN_900.
+
+    MESSAGE 'Modif ecra 900' TYPE 'I'.
+
+  ENDMETHOD.
+
+  METHOD DISPLAY_ALV.
+
+    TRY.
+        CL_SALV_TABLE=>FACTORY(
+          IMPORTING
+            R_SALV_TABLE = GO_LISTA
+          CHANGING
+            T_TABLE      = GT_LISTA ).
+      CATCH CX_SALV_MSG INTO DATA(LX_MSG).
+        GV_ERROR = 'X'.
+    ENDTRY.
+
+    GO_LISTA->SET_SCREEN_STATUS(
+      PFSTATUS      =  'STAT_SALV'
+      REPORT        =  SY-REPID
+      SET_FUNCTIONS = GO_LISTA->C_FUNCTIONS_ALL ).
+
+*" Não mostrar a coluna MANDT.
+
+    FCAT( ).
+
+    IF GV_ERROR EQ SPACE.
+
+      DATA(LO_EVENTS) = GO_LISTA->GET_EVENT( ).
+
+      SET HANDLER GO_APP->ON_USER_COMMAND FOR LO_EVENTS.
+
+      GO_LISTA->GET_SELECTIONS( )->SET_SELECTION_MODE( IF_SALV_C_SELECTION_MODE=>ROW_COLUMN ).
+
+      GO_LISTA->DISPLAY( ).
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD GET_DATA.
+    SELECT * FROM ZJG_TREQUEST INTO TABLE GT_LISTA ORDER BY REQUEST_NR PLATE_TYPE .
+  ENDMETHOD.
+
+  METHOD ON_USER_COMMAND. "on_user_command
+
+    CASE E_SALV_FUNCTION.
+      WHEN 'EXIT'.
+        LEAVE TO SCREEN 0.
+
+      WHEN 'CRIAR'.
+        DO_CRIAR( ).
+
+      WHEN 'MODIFICAR'.
+        DO_MODIFICAR( ).
+
+      WHEN 'ELIMINAR'.
+        DO_ELIMINAR( ).
+
+      WHEN 'ECRA_900'.
+        DO_CALL_SCREEN_900( ).
+
+      WHEN 'IMPRIMIR'.
+        DO_PRINT( ).
+
+    ENDCASE.
+
+  ENDMETHOD.
+
+
+  METHOD DO_CRIAR.
+
+    DATA: LO_SELECTIONS TYPE REF TO CL_SALV_SELECTIONS.
+    DATA: LT_ROWS TYPE SALV_T_ROW.
+
+    LO_SELECTIONS = GO_LISTA->GET_SELECTIONS( ).
+    LT_ROWS = LO_SELECTIONS->GET_SELECTED_ROWS( ).
+
+    CLEAR GS_LINHA_INSERIR.
+
+    IF LINES( LT_ROWS ) EQ 0.
+      CALL SCREEN 0100 STARTING AT 10 08
+                       ENDING AT 70 15 .
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD DO_MODIFICAR.
+
+    DATA: LO_SELECTIONS TYPE REF TO CL_SALV_SELECTIONS.
+
+    DATA: LT_ROWS TYPE SALV_T_ROW.
+    DATA: L_ROW   TYPE I.
+
+    LO_SELECTIONS = GO_LISTA->GET_SELECTIONS( ).
+    LT_ROWS = LO_SELECTIONS->GET_SELECTED_ROWS( ).
+
+    CLEAR GS_LINHA_MODIFICAR.
+
+    IF LINES( LT_ROWS ) NE 1.
+      RETURN.
+    ENDIF.
+
+    READ TABLE LT_ROWS INTO L_ROW  INDEX 1.
+    IF SY-SUBRC EQ 0.
+
+      READ TABLE GT_LISTA INDEX L_ROW INTO GS_LINHA_MODIFICAR.
+      IF SY-SUBRC EQ 0.
+        CALL SCREEN 0101 STARTING AT 10 08
+                         ENDING AT 70 15 .
+      ENDIF.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD DO_ELIMINAR.
+
+    DATA: LT_ROWS TYPE SALV_T_ROW,
+          LT_COLS TYPE SALV_T_COLUMN,
+          LS_CELL TYPE SALV_S_CELL.
+
+    DATA: L_ROW               TYPE I.
+
+    LT_ROWS = GO_LISTA->GET_SELECTIONS( )->GET_SELECTED_ROWS( ).
+
+    IF LINES( LT_ROWS ) NE 1.
+      RETURN.
+    ENDIF.
+
+    CLEAR GS_LINHA_ELIMINAR.
+
+    READ TABLE LT_ROWS INTO L_ROW  INDEX 1.
+    IF SY-SUBRC EQ 0.
+
+      READ TABLE GT_LISTA INDEX L_ROW INTO GS_LINHA_ELIMINAR.
+      IF SY-SUBRC EQ 0.
+        DELETE ZJG_TREQUEST FROM GS_LINHA_ELIMINAR.
+        IF SY-SUBRC EQ 0.
+          COMMIT WORK.
+        ELSE.
+          MESSAGE i010(ZJG_MSG).
+        ENDIF.
+        DELETE GT_LISTA INDEX L_ROW .
+        GO_LISTA->REFRESH( REFRESH_MODE = IF_SALV_C_REFRESH=>FULL  ).
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+
+
+  METHOD DO_PRINT.
+
+    DATA LV_REQ_NUMBER TYPE ZJG_TREQUEST-REQUEST_NR.
+
+    DATA: LO_SELECTIONS TYPE REF TO CL_SALV_SELECTIONS.
+
+    DATA: LT_ROWS TYPE SALV_T_ROW.
+    DATA: L_ROW   TYPE I.
+
+    LO_SELECTIONS = GO_LISTA->GET_SELECTIONS( ).
+    LT_ROWS = LO_SELECTIONS->GET_SELECTED_ROWS( ).
+
+    CLEAR GS_LINHA_MODIFICAR.
+
+    IF LINES( LT_ROWS ) NE 1.
+      MESSAGE i011(ZJG_MSG).
+      RETURN.
+    ENDIF.
+
+    READ TABLE LT_ROWS INTO L_ROW  INDEX 1.
+    IF SY-SUBRC EQ 0.
+
+      READ TABLE GT_LISTA INDEX L_ROW INTO GS_LINHA_MODIFICAR.
+      IF SY-SUBRC EQ 0.
+
+
+        LV_REQ_NUMBER = GS_LINHA_MODIFICAR-REQUEST_NR.
+
+        DATA LV_FM_NAME TYPE  RS38L_FNAM.
+
+        CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+          EXPORTING
+            FORMNAME           = 'ZJG_FORM_REQUESTS_VIS04'
+*           VARIANT            = ' '
+*           DIRECT_CALL        = ' '
+          IMPORTING
+            FM_NAME            = LV_FM_NAME
+          EXCEPTIONS
+            NO_FORM            = 1
+            NO_FUNCTION_MODULE = 2
+            OTHERS             = 3.
+        IF SY-SUBRC <> 0.
+
+          RETURN.
+        ENDIF.
+
+        CALL FUNCTION LV_FM_NAME
+          EXPORTING
+*           ARCHIVE_INDEX    =
+*           ARCHIVE_INDEX_TAB          =
+*           ARCHIVE_PARAMETERS         =
+*           CONTROL_PARAMETERS         =
+*           MAIL_APPL_OBJ    =
+*           MAIL_RECIPIENT   =
+*           MAIL_SENDER      =
+*           OUTPUT_OPTIONS   =
+*           USER_SETTINGS    = 'X'
+            REQUEST_NR       = LV_REQ_NUMBER
+* IMPORTING
+*           DOCUMENT_OUTPUT_INFO       =
+*           JOB_OUTPUT_INFO  =
+*           JOB_OUTPUT_OPTIONS         =
+          EXCEPTIONS
+            FORMATTING_ERROR = 1
+            INTERNAL_ERROR   = 2
+            SEND_ERROR       = 3
+            USER_CANCELED    = 4
+            OTHERS           = 5.
+        IF SY-SUBRC <> 0.
+          RETURN.
+        ENDIF.
+         ELSE.
+      MESSAGE i011(ZJG_MSG).
+
+      ENDIF.
+    ELSE.
+      MESSAGE i011(ZJG_MSG).
+    ENDIF.
+
+
+  ENDMETHOD.
+
+
+ENDCLASS.
